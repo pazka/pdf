@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.testdata/
+*.local
+*.env
+.env
+!.env.example
+docker-compose.yml
+.DS_Store
+visual/out/
