@@ -939,7 +939,12 @@ function wire() {
   live("p-stroke", (o, el) => (o.stroke = rgb(el.value)));
   live("p-fill", (o, el) => (o.fill = rgb(el.value)));
   live("p-opacity", (o, el) => (o.opacity = Number(el.value)));
-  $("p-stroke-width").addEventListener("change", (e) => applyProp((o) => (o.strokeWidth = Math.max(0, Number(e.target.value) || 0))));
+  $("p-stroke-width").addEventListener("change", (e) => applyProp((o) => {
+    // width 0 means "no border" for a rectangle or an ellipse; a line, an arrow or a drawing
+    // would vanish, so they keep at least a hairline
+    const lineLike = ["line", "arrow", "ink"].includes(o.type || S.tool);
+    o.strokeWidth = Math.max(lineLike ? 0.25 : 0, Number(e.target.value) || 0);
+  }));
   $("p-dash").addEventListener("change", (e) => applyProp((o) => (o.dash = e.target.checked)));
   $("p-fill-on").addEventListener("change", (e) => applyProp((o) => (o.fill = e.target.checked ? rgb($("p-fill").value) : null)));
   $("p-font-add").addEventListener("click", () => $("font-file").click());

@@ -44,8 +44,11 @@ Live at **https://pdf.hosh.it** on the owner's hosh.it box. **`docs/BOX-CONTRACT
 - `scripts/build.mjs`: `web/` + MuPDF.js from `node_modules` → `dist/`; `scripts/precompress.mjs`.
 - `server/`: `main.js` (entry), `app.js` (headers, routes), `static.js` (prebuilt file map),
   `smoke.js` (POST_DEPLOY capability checks), `healthcheck.js`, `log.js`.
-- `test/`: `npm test` (node:test): `engine.test.js` reads every result back from the written PDF
-  (extracted text, pixels); `server.test.js`, `log.test.js`. `test/fixture.mjs` builds the fixture.
+- `test/`: `npm test` (node:test): `engine.test.js`, `engine-files.test.js`, `engine-keeps.test.js`
+  read every result back from the written PDF (extracted text, pixels); `server.test.js`,
+  `log.test.js`. `test/fixture.mjs` builds the fixtures. `test/mutations.sh` breaks the engine one
+  behaviour at a time: every line must say `killed` (MuPDF updates merge themselves on green CI,
+  so what the tests do not pin can change unnoticed).
 - `visual/`: visual regression harness and its use cases (`TESTING.md`).
 
 ## Rules

@@ -36,10 +36,17 @@ image (`docker run --rm -v "$PWD:/src" -w /src node:26.13.1-trixie-slim … npm 
   that inherit or share their Resources; the q ... Q wrapping; a font file added by the visitor; a
   font the editor does not have; a text clicked and not changed is not an edit (`isPristine`); a
   password-protected file.
-- `test/mutations.sh` breaks the engine one behaviour at a time (24 mutations: font name reuse,
+- `engine-keeps.test.js`: what an edit must not touch. Changing a text leaves the filled band it
+  is written on, the border beside it, a picture under it and a small drawing lying across it;
+  the eraser removes text only and has no outline; opacity applies to lines, borders, drawings and
+  arrows; a line, arrow or drawing of width 0 draws nothing (never the page's default black pen);
+  text that is not horizontal is not offered for editing and survives an edit next to it.
+- `test/mutations.sh` breaks the engine one behaviour at a time (33 mutations: font name reuse,
   the redaction band three ways, image flipped, image / text / shape opacity, arrow head and its
   colour, eraser cover, fallback font, q wrapping, strikethrough, underline, dash, line width,
-  rotation, alignment, Resources copy, run joining, font flags, centring, subsetting): each one must
+  rotation, alignment, Resources copy, run joining, font flags, centring, subsetting, the three
+  redaction options that would remove pictures or drawings, stroke and fill opacity, rotated text,
+  the eraser's outline, width 0): each one must
   make a test fail. Run it, and add a line to it, when adding a behaviour to the engine.
 - `server.test.js`: `/healthz` (engine and fonts present), strict CSP, WebAssembly and font content
   types, revalidation, brotli, no dotfile / traversal / listing, read-only methods.

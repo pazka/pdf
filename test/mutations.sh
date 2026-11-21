@@ -10,7 +10,7 @@ try() {
     const [a,b]=[process.argv[1],process.argv[2]];
     if(!s.includes(a)){console.log("NOT FOUND "+process.argv[3]);process.exit(3)}
     fs.writeFileSync("web/js/engine.js",s.replace(a,b));' "$2" "$3" "$1" || return
-  if node --test test/engine.test.js test/engine-files.test.js >/dev/null 2>&1; then echo "SURVIVED  $1"; else echo "killed    $1"; fi
+  if node --test test/engine.test.js test/engine-files.test.js test/engine-keeps.test.js >/dev/null 2>&1; then echo "SURVIVED  $1"; else echo "killed    $1"; fi
 }
 try "font resource name reused" 'if (dict.get(name).isNull()) return name;' 'return name;'
 try "band -> line box" 'r.y - r.size * 0.55, r.x1, r.y - r.size * 0.15' 'r.y - r.size * 1.1, r.x1, r.y + r.size * 0.35'
@@ -35,5 +35,14 @@ try "page Resources not copied" 'pageObj.put("Resources", copy);' 'pageObj.put("
 try "runs on one baseline not joined" 'if (joins) {' 'if (false) {'
 try "font flags before the name" 'if (/helvetica|arial|nimbussans|liberationsans/.test(lower)) return { family: "Helvetica", bold, italic, exact: true };' 'if (flags.serif) return { family: "Times", bold, italic, exact: true };'
 try "centred text not detected" 'p.align = "center";' 'p.align = "left";'
+try "an edit removes the pictures under it" 'mupdf.PDFPage.REDACT_IMAGE_NONE' 'mupdf.PDFPage.REDACT_IMAGE_REMOVE'
+try "an edit removes the drawings it touches" 'mupdf.PDFPage.REDACT_LINE_ART_NONE' 'mupdf.PDFPage.REDACT_LINE_ART_REMOVE_IF_TOUCHED'
+try "an edit removes the drawings it covers" 'mupdf.PDFPage.REDACT_LINE_ART_NONE' 'mupdf.PDFPage.REDACT_LINE_ART_REMOVE_IF_COVERED'
+try "stroke opacity ignored" 'ca: a, CA: a' 'ca: a'
+try "fill opacity ignored" 'ca: a, CA: a' 'CA: a'
+try "rotated text offered for editing" 'if (!l.horizontal) continue;' ''
+try "eraser gets an outline" '{ ...o, fill: o.fill || [1, 1, 1], stroke: null }' '{ ...o, fill: o.fill || [1, 1, 1] }'
+try "line of width 0 drawn with the default pen" 'if (!(w > 0)) break;' ''
+try "drawing of width 0 drawn with the default pen" 'if (!((o.strokeWidth ?? 1) > 0)) break;' ''
 try "fonts not subset" 'if (state.fontRefs && state.fontRefs.size) doc.subsetFonts();' ''
 cp /tmp/engine.orig web/js/engine.js

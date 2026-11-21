@@ -546,6 +546,9 @@ export function createEngine(mupdf) {
         case "line":
         case "arrow": {
           const w = o.strokeWidth ?? 1;
+          // a line of no width is no line (without this the path would be stroked with the
+          // default pen of the page: black, 1 wide)
+          if (!(w > 0)) break;
           const p = paint({ ...o, fill: null, stroke: o.stroke || [0, 0, 0] });
           let s = `q\n${p.s}1 J\n${num(o.x1)} ${num(o.y1)} m ${num(o.x2)} ${num(o.y2)} l S\n`;
           if (o.type === "arrow") {
@@ -558,6 +561,7 @@ export function createEngine(mupdf) {
           break;
         }
         case "ink": {
+          if (!((o.strokeWidth ?? 1) > 0)) break;
           const p = paint({ ...o, fill: null, stroke: o.stroke || [0, 0, 0] });
           let s = `q\n${p.s}1 J 1 j\n`;
           for (const stroke of o.strokes) {
