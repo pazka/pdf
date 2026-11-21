@@ -237,6 +237,6 @@ body.dragging .drop, body.dragging .pages { outline: 3px dashed var(--accent); o
   .drop { margin: 4vh 12px; }
 }
 @media (max-width: 600px) {
-  .long, .brand span { display: none; }
-  .zoom { min-width: 46px; }
+  /* a phone: icon, Open, undo/redo, zoom buttons, Download must fit in 390 px with any system font */
+  .long, .brand span, .zoom { display: none; }
 }
