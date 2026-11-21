@@ -1,0 +1,24 @@
+# Tested minor/patch updates merge themselves (workflows/dependabot-merge.yml, box standard
+# hosh-migration Decision #18); majors get "needs-review". 7-day cooldown (Decision #17).
+# Dependency updates with a cooldown (box contract rule 12): nothing younger than 7 days is proposed.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+    groups:
+      minor-patch:
+        update-types: [minor, patch]
+  - package-ecosystem: docker
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: [minor, patch]

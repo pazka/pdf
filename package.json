@@ -1,0 +1,20 @@
+{
+  "name": "pdf",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "pdf.hosh.it: edit a PDF in the browser (text, images, shapes); the file never leaves the device",
+  "license": "AGPL-3.0-or-later",
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs && node scripts/precompress.mjs",
+    "start": "node server/main.js",
+    "test": "node --test \"test/**/*.test.*\"",
+    "smoke": "node server/smoke.js"
+  },
+  "dependencies": {
+    "mupdf": "1.28.6"
+  }
+}

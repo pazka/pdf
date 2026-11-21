@@ -1,0 +1,22 @@
+# Rendered by hosh-deploy on the first deploy (copied at `register`) into
+# /root/hosh-deploy/edge/traefik/dynamic/pdf.yml. @@TOKENS@@ are filled on the box.
+# hosh.it box standard: edge Traefik (host network, file provider) → loopback port of the container.
+# REVERT = delete this file (Traefik hot-reloads the directory).
+http:
+  routers:
+    pdf:
+      rule: "Host(`@@HOST@@`)"
+      service: pdf
+      entryPoints: [@@ENTRYPOINT@@]
+      middlewares: [pdf-hsts]
+      tls: @@TLS@@
+  middlewares:
+    pdf-hsts:
+      headers:
+        stsSeconds: 31536000
+        stsIncludeSubdomains: true
+  services:
+    pdf:
+      loadBalancer:
+        servers:
+          - url: "http://@@BIND@@"
