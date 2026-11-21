@@ -5,7 +5,7 @@
  * State: per page a list of objects (js/engine.js). The canvas of a page always shows the result of
  * engine.preview(), the same code that writes the downloaded file.
  */
-import { ASCENT, SHIPPED_FONTS, adoptPiece, createEngine } from "./engine.js";
+import { ASCENT, SHIPPED_FONTS, adoptPiece, createEngine, isPristine } from "./engine.js";
 
 const $ = (id) => document.getElementById(id);
 const root = document.documentElement;
@@ -60,7 +60,10 @@ const HELP = {
 const hex = (c) => `#${c.map((v) => Math.round(Math.min(1, Math.max(0, v)) * 255).toString(16).padStart(2, "0")).join("")}`;
 const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
 const css = (c) => `rgb(${c.map((v) => Math.round(v * 255)).join(",")})`;
-const snap = () => JSON.stringify(S.pages.map((p) => p.objects));
+/** The objects of a page that change the file. A text of the file that was only clicked (selected,
+ *  not changed) is a handle on the page's own text: it is never written, drawn or kept in history. */
+const written = (page) => page.objects.filter((o) => !isPristine(o));
+const snap = () => JSON.stringify(S.pages.map(written));
 const newId = () => `o${(S.seq += 1)}`;
 
 let toastTimer = 0;
@@ -145,9 +148,9 @@ function renderSome() {
 }
 
 function visibleObjects(page) {
-  if (!S.editing || S.editing.page !== page.index) return page.objects;
+  if (!S.editing || S.editing.page !== page.index) return written(page);
   // the text being typed is shown by the text box; what it replaces stays removed from the page
-  return page.objects.map((o) => (o.id === S.editing.id ? { ...o, text: "" } : o));
+  return page.objects.filter((o) => o.id === S.editing.id || !isPristine(o)).map((o) => (o.id === S.editing.id ? { ...o, text: "", pristine: undefined } : o));
 }
 
 function paint(canvas, r) {
@@ -278,8 +281,16 @@ function drawOverlay(page) {
 
 /* ---------- selection and properties panel ---------- */
 
+/** Forgets the texts of the file that were selected and left as they were. */
+function prune() {
+  for (const p of S.pages) {
+    p.objects = p.objects.filter((o) => !isPristine(o) || (S.sel && S.sel.id === o.id) || (S.editing && S.editing.id === o.id));
+  }
+}
+
 function select(pageIndex, id) {
   S.sel = id ? { page: pageIndex, id } : null;
+  prune();
   for (const p of S.pages) drawOverlay(p);
   syncProps();
 }
@@ -292,6 +303,7 @@ function setTool(tool) {
   }
   S.tool = tool;
   if (tool !== "select") S.sel = null;
+  prune();
   for (const b of $("tools").querySelectorAll("button")) b.classList.toggle("on", b.dataset.tool === tool);
   for (const p of S.pages) drawOverlay(p);
   syncProps();
@@ -335,7 +347,7 @@ function syncProps() {
     $("p-color").value = hex(o.color || [0, 0, 0]);
     if (selected && o.redact && o.exactFont === false) {
       note.hidden = false;
-      note.textContent = `This text was set in "${o.fontName}". The editor does not have that font, so the text is rewritten in ${o.family}. To keep the exact look, add the font file below.`;
+      note.textContent = `This text is set in "${o.fontName}". The editor does not have that font: once changed, the text is rewritten in ${o.family}. To keep the exact look, add the font file below.`;
     }
   }
   if (show.stroke) {
@@ -420,6 +432,7 @@ function startEdit(page, o, { before, isNew = false, adoptedNow = false } = {}) 
   el.value = o.text;
   S.editing = { page: page.index, id: o.id, el, before: before || snap(), isNew, adoptedNow, startText: o.text };
   S.sel = { page: page.index, id: o.id };
+  prune(); // another text that was only selected is the page's own text again
   el.addEventListener("input", sizeEditor);
   el.addEventListener("blur", () => {
     // a click in the panel or on a tool also ends the edit; the object stays selected
@@ -454,11 +467,9 @@ function commitEdit() {
     if (ed.isNew && text.trim() === "") {
       page.objects = page.objects.filter((x) => x !== o);
       S.sel = null;
-    } else if (ed.adoptedNow && untouched) {
-      // clicked a text and left it as it was: the page keeps its original text
-      page.objects = page.objects.filter((x) => x !== o);
-      S.sel = null;
     } else if (!untouched || ed.isNew) {
+      // (a text of the file that was clicked and left as it was stays selected, ready to be moved
+      // or restyled; it changes nothing in the file until then, see isPristine)
       pushUndo(ed.before);
     }
   }
@@ -704,6 +715,7 @@ function duplicate(src = findObj(), pageIndex = S.sel?.page) {
   delete o.redact;
   delete o.piece;
   delete o.original;
+  delete o.pristine;
   translate(o, JSON.parse(JSON.stringify(o)), 12, 12);
   mutate(() => S.pages[pageIndex].objects.push(o));
   select(pageIndex, o.id);
@@ -784,7 +796,11 @@ async function openFile(file) {
     thumb.width = 96;
     thumb.height = Math.round((96 * size.height) / size.width);
     tb.append(thumb, document.createTextNode(String(index + 1)));
-    tb.addEventListener("click", () => el.scrollIntoView({ block: "start" }));
+    // only the page area scrolls (scrollIntoView would also shift the whole window on a phone)
+    tb.addEventListener("click", () => {
+      stage.scrollTop = Math.max(0, el.offsetTop - 8);
+      markCurrent();
+    });
     const page = { index, size, objects: [], pieces: null, el, canvas, overlay, thumb, thumbEl: tb, stale: true, thumbStale: false, visible: index < 2 };
     overlay.addEventListener("pointerdown", (e) => onPointerDown(e, page));
     return page;
@@ -810,7 +826,7 @@ function save() {
   if (S.editing) commitEdit();
   let out;
   try {
-    out = S.engine.exportPdf(S.bytes, S.pages.map((p) => p.objects), S.images);
+    out = S.engine.exportPdf(S.bytes, S.pages.map(written), S.images);
   } catch (err) {
     console.error(err);
     toast(`The file could not be written: ${err.message || err}`, true);

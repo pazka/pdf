@@ -12,6 +12,9 @@ import { SHIPPED_FONTS, createEngine } from "../web/js/engine.js";
 export const BLUE = [0.208, 0.294, 0.686];
 export const INK = [0.13, 0.15, 0.16];
 export const TITLE = "Facture brouillon F-001";
+export const UNKNOWN_TEXT = "Police inconnue";
+export const UNKNOWN_FONT = "Quicksand-Medium";
+export const PASSWORD = "secret";
 
 /** An engine with the shipped fonts loaded from web/fonts (what the browser does with fetch). */
 export function engineWithFonts(mupdf) {
@@ -22,12 +25,12 @@ export function engineWithFonts(mupdf) {
   return engine;
 }
 
-/** A PNG made with Node built-ins. `alpha`: the left half is fully transparent. */
-export function png({ width = 32, height = 32, rgb = [214, 69, 65], alpha = true } = {}) {
+/** A PNG made with Node built-ins. `alpha`: the left half is fully transparent. `bottom`: colour of the lower half. */
+export function png({ width = 32, height = 32, rgb = [214, 69, 65], bottom = rgb, alpha = true } = {}) {
   const rows = [];
   for (let y = 0; y < height; y += 1) {
     const row = [0];
-    for (let x = 0; x < width; x += 1) row.push(...rgb, alpha && x < width / 2 ? 0 : 255);
+    for (let x = 0; x < width; x += 1) row.push(...(y < height / 2 ? rgb : bottom), alpha && x < width / 2 ? 0 : 255);
     rows.push(Buffer.from(row));
   }
   const table = Array.from({ length: 256 }, (_, n) => {
@@ -82,12 +85,15 @@ export const PAGE2 = [
   text("Conditions", 40, 70, 16, { family: "Times", bold: true }),
   text("Paiement à 30 jours.\nPénalités de retard : 3 fois le taux légal.", 40, 100, 11, { family: "Times" }),
   text("Référence F-001", 40, 160, 10, { family: "Courier" }),
+  text("Signature du client", 40, 230, 12, { family: "Helvetica" }),
+  // written in Lato bold italic, then renamed in the file (buildFixture): a font the editor does not have
+  text(UNKNOWN_TEXT, 40, 270, 12, { bold: true, italic: true }),
   { type: "line", x1: 40, y1: 180, x2: 555, y2: 180, stroke: [0.6, 0.6, 0.6], strokeWidth: 1 },
   text("Page 2 / 2", 555, 800, 9, { align: "right" }),
 ];
 
 /** Bytes of the fixture PDF. Its fonts are subset, as in a real invoice. */
-export function buildFixture(mupdf, engine = engineWithFonts(mupdf)) {
+export function buildFixture(mupdf, engine = engineWithFonts(mupdf), options = "garbage=compact,compress=yes") {
   const doc = new mupdf.PDFDocument();
   const state = {};
   for (const objects of [PAGE1, PAGE2]) {
@@ -95,11 +101,23 @@ export function buildFixture(mupdf, engine = engineWithFonts(mupdf)) {
     engine.bake(doc, doc.countPages() - 1, objects, state);
   }
   doc.subsetFonts();
-  const buf = doc.saveToBuffer("garbage=compact,compress=yes");
+  // one font gets a name the editor knows nothing about (as a PDF made with any other font would have)
+  const font = state.fontRefs.get(engine.getFont("Lato", true, true));
+  const name = `QAZWSX+${UNKNOWN_FONT}`;
+  font.put("BaseFont", doc.newName(name));
+  const descendant = font.get("DescendantFonts", 0);
+  descendant.put("BaseFont", doc.newName(name));
+  descendant.get("FontDescriptor").put("FontName", doc.newName(name));
+  const buf = doc.saveToBuffer(options);
   const bytes = new Uint8Array(buf.asUint8Array());
   buf.destroy();
   doc.destroy();
   return bytes;
+}
+
+/** The fixture, protected by a password that is needed to open it. */
+export function buildProtected(mupdf, engine = engineWithFonts(mupdf)) {
+  return buildFixture(mupdf, engine, `garbage=compact,compress=yes,encrypt=aes-256,user-password=${PASSWORD},owner-password=${PASSWORD}-owner`);
 }
 
 if (process.argv.includes("--check")) {
@@ -117,10 +135,16 @@ if (process.argv.includes("--check")) {
     console.error("visual/fixture.pdf is not what test/fixture.mjs builds: run node test/fixture.mjs --write");
     process.exit(1);
   }
-  console.log("visual/fixture.pdf matches test/fixture.mjs");
+  const locked = engine.open(new Uint8Array(readFileSync(new URL("../visual/protected.pdf", import.meta.url))));
+  if (!locked.needsPassword() || !locked.authenticatePassword(PASSWORD)) {
+    console.error("visual/protected.pdf is not protected by the fixture's password: run node test/fixture.mjs --write");
+    process.exit(1);
+  }
+  console.log("visual/fixture.pdf and visual/protected.pdf match test/fixture.mjs");
 } else if (process.argv.includes("--write")) {
   const mupdf = await import("mupdf");
   const out = new URL("../visual/fixture.pdf", import.meta.url);
   writeFileSync(out, buildFixture(mupdf));
-  console.log(`wrote ${out.pathname}`);
+  writeFileSync(new URL("../visual/protected.pdf", import.meta.url), buildProtected(mupdf));
+  console.log(`wrote ${out.pathname} and protected.pdf`);
 }

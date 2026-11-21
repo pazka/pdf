@@ -6,8 +6,10 @@ import { test } from "node:test";
 
 import * as mupdf from "mupdf";
 
-import { adoptPiece, matchFont, stripSubsetTag } from "../web/js/engine.js";
-import { BLUE, TITLE, buildFixture, engineWithFonts, png } from "./fixture.mjs";
+import { readFileSync } from "node:fs";
+
+import { adoptPiece, isPristine, matchFont, stripSubsetTag } from "../web/js/engine.js";
+import { BLUE, PASSWORD, TITLE, UNKNOWN_FONT, UNKNOWN_TEXT, buildFixture, buildProtected, engineWithFonts, png } from "./fixture.mjs";
 
 const engine = engineWithFonts(mupdf);
 const fixture = buildFixture(mupdf, engine);
@@ -49,6 +51,13 @@ test("font matching: subset tag, shipped family, closest standard font", () => {
   assert.deepEqual(matchFont("Garamond-Premier", { serif: true }), { family: "Times", bold: false, italic: false, exact: false });
   assert.deepEqual(matchFont("Montserrat-SemiBold"), { family: "Helvetica", bold: true, italic: false, exact: false });
   assert.deepEqual(matchFont("SomeMono", { mono: true, italic: true }), { family: "Courier", bold: false, italic: true, exact: false });
+  // the name wins over the flags: MuPDF says "serif" for every font it embedded itself
+  assert.deepEqual(matchFont("Helvetica", { serif: true }), { family: "Helvetica", bold: false, italic: false, exact: true });
+  assert.deepEqual(matchFont("ABCDEF+Helvetica-BoldOblique", { serif: true, mono: true }), { family: "Helvetica", bold: true, italic: true, exact: true });
+  assert.deepEqual(matchFont("NimbusSans-Regular", { serif: true }), { family: "Helvetica", bold: false, italic: false, exact: true });
+  assert.deepEqual(matchFont("Courier", { serif: true }), { family: "Courier", bold: false, italic: false, exact: true });
+  assert.deepEqual(matchFont("OpenSans-Regular", { serif: true }), { family: "Helvetica", bold: false, italic: false, exact: false });
+  assert.deepEqual(matchFont("Lato-Regular", { serif: true, mono: true }), { family: "Lato", bold: false, italic: false, exact: true });
 });
 
 test("the text of a page comes back as editable pieces with their style", () => {
@@ -160,11 +169,16 @@ test("new text: font, size, colour, bold and italic, alignment, underline", () =
 });
 
 test("a character the font lacks is written with Helvetica; one nobody has is reported", () => {
-  const add = { id: "n1", type: "text", text: "Ω ok \u{1F600}", x: 60, y: 620, size: 14, family: "Courier", bold: false, italic: false, color: [0, 0, 0] };
+  // Lato has no "∀", Helvetica has; nobody has the emoji
+  const add = { id: "n1", type: "text", text: "A ∀ ok \u{1F600}", x: 60, y: 620, size: 14, family: "Lato", bold: false, italic: false, color: [0, 0, 0] };
+  assert.equal(engine.getFont("Lato", false, false).encodeCharacter("∀"), 0, "Lato now has this character: pick another one for the test");
   assert.deepEqual(engine.missingGlyphs(add), ["\u{1F600}"]);
   const { data, missing } = one([add]);
   assert.deepEqual(missing, ["\u{1F600}"]);
-  assert.match(allText(data), /ok \?/);
+  const written = texts(data).filter((p) => Math.abs(p.y - 620) < 0.5);
+  assert.match(written.map((p) => p.text).join(""), /A ?∀ ?ok \?/);
+  assert.equal(written.find((p) => p.text.includes("∀")).family, "Helvetica", "the character was not written with the fallback font");
+  assert.equal(written.find((p) => p.text.includes("ok")).family, "Lato");
 });
 
 test("shapes are drawn where and how they were asked", () => {
@@ -175,7 +189,20 @@ test("shapes are drawn where and how they were asked", () => {
     { id: "a", type: "arrow", x1: 420, y1: 600, x2: 500, y2: 600, stroke: [0.5, 0, 0.5], strokeWidth: 3 },
     { id: "i", type: "ink", strokes: [[[100, 640], [140, 640], [180, 640]]], stroke: [1, 0.5, 0], strokeWidth: 5 },
     { id: "o", type: "rect", x: 100, y: 680, w: 60, h: 30, fill: [0, 0, 0], stroke: null, opacity: 0.5 },
+    // dashed: 3 widths on, 2 widths off, so with width 4 from x=200: ink 200..212, gap 212..220
+    { id: "d", type: "line", x1: 200, y1: 690, x2: 300, y2: 690, stroke: [0, 0, 0], strokeWidth: 4, dash: true },
+    // a 100 x 20 bar turned a quarter turn about its centre (350,730): it now stands 20 wide, 100 high
+    { id: "t", type: "rect", x: 300, y: 720, w: 100, h: 20, fill: [0, 0, 1], stroke: null, rotation: 90 },
+    { id: "s", type: "text", text: "XXXXXXXX", x: 430, y: 700, size: 20, family: "Helvetica", bold: true, italic: false, color: [0, 0.4, 0], strike: true },
   ]);
+  assertPixel(pixelAt(data, 0, 206, 690), [0, 0, 0], "dash");
+  assertPixel(pixelAt(data, 0, 216, 690), [255, 255, 255], "gap between two dashes");
+  assertPixel(pixelAt(data, 0, 350, 690), [0, 0, 255], "top of the turned bar");
+  assertPixel(pixelAt(data, 0, 350, 770), [0, 0, 255], "bottom of the turned bar");
+  assertPixel(pixelAt(data, 0, 310, 730), [255, 255, 255], "where the bar was before it was turned");
+  // strikethrough: a rule 0.3 size above the baseline; between two X at mid height there is no glyph ink
+  const xw = engine.measure("X", "Helvetica", true, false) * 20;
+  assertPixel(pixelAt(data, 0, 430 + xw, 700 - 20 * 0.3 + 0.6), [0, 102, 0], "strikethrough");
   assertPixel(pixelAt(data, 0, 140, 580), [255, 0, 0], "rectangle fill");
   assertPixel(pixelAt(data, 0, 100, 580), [0, 0, 255], "rectangle border");
   assertPixel(pixelAt(data, 0, 260, 580), [0, 153, 0], "ellipse fill");
@@ -183,33 +210,53 @@ test("shapes are drawn where and how they were asked", () => {
   assertPixel(pixelAt(data, 0, 365, 580), [0, 0, 0], "line");
   assertPixel(pixelAt(data, 0, 365, 588), [255, 255, 255], "beside the line");
   assertPixel(pixelAt(data, 0, 450, 600), [128, 0, 128], "arrow shaft");
-  assertPixel(pixelAt(data, 0, 495, 600), [128, 0, 128], "arrow head");
+  // the head is a triangle 12 long behind the tip (500,600): this point is in it and 3.5 off the shaft
+  assertPixel(pixelAt(data, 0, 492, 603.5), [128, 0, 128], "arrow head");
+  assertPixel(pixelAt(data, 0, 480, 603.5), [255, 255, 255], "beside the arrow shaft, behind the head");
   assertPixel(pixelAt(data, 0, 160, 640), [255, 128, 0], "drawing");
   assertPixel(pixelAt(data, 0, 130, 695), [128, 128, 128], "half transparent black on white", 10);
 });
 
 test("an image keeps its transparency and its place", () => {
-  const images = new Map([["img1", png({ rgb: [214, 69, 65] })]]);
+  const pix = new mupdf.Pixmap(mupdf.ColorSpace.DeviceRGB, [0, 0, 16, 16], false);
+  pix.clear(0);
+  const images = new Map([["img1", png({ rgb: [214, 69, 65], bottom: [20, 160, 90] })], ["jpg", pix.asJPEG(90)]]);
   assert.deepEqual(engine.imageSize(images.get("img1")), { width: 32, height: 32 });
   const { data } = one([
     { id: "b", type: "rect", x: 90, y: 590, w: 120, h: 120, fill: [0, 0, 1], stroke: null },
     { id: "i", type: "image", imageId: "img1", x: 100, y: 600, w: 100, h: 100, opacity: 1 },
+    { id: "j", type: "image", imageId: "jpg", x: 300, y: 600, w: 40, h: 40, opacity: 1 },
+    { id: "k", type: "image", imageId: "not-loaded", x: 400, y: 600, w: 40, h: 40, opacity: 1 },
   ], 0, images);
+  // the upper half of the picture is red, the lower half green: upside down would swap them
+  assertPixel(pixelAt(data, 0, 175, 625), [214, 69, 65], "upper half of the image");
+  assertPixel(pixelAt(data, 0, 175, 675), [20, 160, 90], "lower half of the image");
+  assertPixel(pixelAt(data, 0, 125, 675), [0, 0, 255], "transparent lower left");
+  assertPixel(pixelAt(data, 0, 320, 620), [0, 0, 0], "JPEG", 12);
+  assertPixel(pixelAt(data, 0, 420, 620), [255, 255, 255], "an image whose file is not loaded draws nothing");
   // left half of the PNG is transparent: the blue rectangle shows through; the right half is the image
   assertPixel(pixelAt(data, 0, 125, 650), [0, 0, 255], "transparent half");
-  assertPixel(pixelAt(data, 0, 175, 650), [214, 69, 65], "opaque half");
-  assertPixel(pixelAt(data, 0, 175, 603), [214, 69, 65], "top of the image (not upside down or shifted)");
+  assertPixel(pixelAt(data, 0, 175, 603), [214, 69, 65], "top edge of the image");
+  assertPixel(pixelAt(data, 0, 175, 697), [20, 160, 90], "bottom edge of the image");
   assertPixel(pixelAt(data, 0, 205, 650), [0, 0, 255], "right of the image");
 });
 
 test("the eraser removes the text under it from the file and covers the area", () => {
   const label = texts(fixture).find((p) => p.text === "Total");
   const [x0, y0, x1, y1] = label.bbox;
-  const { data } = one([{ id: "e", type: "erase", x: x0 - 2, y: y0 - 2, w: x1 - x0 + 4, h: y1 - y0 + 4, fill: [1, 1, 1] }]);
+  const { data } = one([
+    { id: "b", type: "rect", x: x0 - 20, y: y0 - 20, w: x1 - x0 + 40, h: y1 - y0 + 40, fill: [0, 0, 1], stroke: null },
+    { id: "e", type: "erase", x: x0 - 2, y: y0 - 2, w: x1 - x0 + 4, h: y1 - y0 + 4, fill: [1, 1, 0] },
+  ]);
   const all = allText(data);
   assert.ok(!/^Total$/m.test(all), "the erased word can still be extracted");
   assert.ok(all.includes("8 000,00 €"), "the amount next to it was erased too");
-  assertPixel(pixelAt(data, 0, (x0 + x1) / 2, (y0 + y1) / 2), [255, 255, 255], "erased area");
+  // the area is covered with the eraser's colour, over the blue shape that was drawn before it
+  assertPixel(pixelAt(data, 0, (x0 + x1) / 2, (y0 + y1) / 2), [255, 255, 0], "erased area");
+  assertPixel(pixelAt(data, 0, x0 - 10, (y0 + y1) / 2), [0, 0, 255], "left of the erased area");
+  // a white eraser by default
+  const plain = one([{ id: "b", type: "rect", x: x0 - 20, y: y0 - 20, w: x1 - x0 + 40, h: y1 - y0 + 40, fill: [0, 0, 1], stroke: null }, { id: "e", type: "erase", x: x0, y: y0, w: x1 - x0, h: y1 - y0 }]).data;
+  assertPixel(pixelAt(plain, 0, (x0 + x1) / 2, (y0 + y1) / 2), [255, 255, 255], "default eraser colour");
 });
 
 test("the opened file is never modified, and the preview is the saved page", () => {

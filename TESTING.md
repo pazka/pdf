@@ -27,15 +27,28 @@ image (`docker run --rm -v "$PWD:/src" -w /src node:26.13.1-trixie-slim … npm 
   - the opened bytes are never modified; the preview equals the saved page; the saved file embeds
     only the glyphs it uses;
   - a rotated page and a page that leaves a dirty graphics state: objects still land where asked;
-  - font matching by name (`matchFont`).
+  - font matching by name (`matchFont`): the name wins over the flags of the file.
+- `engine-files.test.js`: the engine against the kinds of PDF other programs write and against its
+  own output opened again: every family and style read back as written; edit, save, reopen, edit
+  again keeps the font; a file written by the editor then edited with another font keeps the fonts
+  of the texts already there; lines set tight (10 pt Helvetica 10 pt apart, Lato at line spacing 1.0)
+  keep their neighbours; words split on one baseline are one piece; grey and CMYK colours; pages
+  that inherit or share their Resources; the q ... Q wrapping; a font file added by the visitor; a
+  font the editor does not have; a text clicked and not changed is not an edit (`isPristine`); a
+  password-protected file.
+- The engine tests were checked by breaking the engine one behaviour at a time (20 mutations: font
+  name reuse, redaction band, image flipped, no arrow head, eraser cover, fallback font, q wrapping,
+  strikethrough, dash, rotation, Resources copy, run joining, underline, opacity, alignment, font
+  flags, centring, subsetting...): each one makes a test fail. Do the same when adding a behaviour.
 - `server.test.js`: `/healthz` (engine and fonts present), strict CSP, WebAssembly and font content
   types, revalidation, brotli, no dotfile / traversal / listing, read-only methods.
 - `log.test.js`: the JSON log lines (startup, errors, request lines) and that no path or query
   string ever reaches a log.
 
-`test/fixture.mjs` builds the only PDF of the repo, `visual/fixture.pdf`: an invented two-page
-invoice written with the engine itself (Lato title, address, table, a paragraph; Times and Courier on
-page 2), fonts subset as in a real file. `node test/fixture.mjs --check` (CI) fails when the committed
+`test/fixture.mjs` builds the only PDFs of the repo: `visual/fixture.pdf`, an invented two-page
+invoice written with the engine itself (Lato title, address, table, a paragraph; Times, Courier,
+Helvetica and a font renamed to one the editor does not have on page 2), fonts subset as in a real
+file, and `visual/protected.pdf`, the same file protected by a password. `node test/fixture.mjs --check` (CI) fails when the committed
 file is not what the code builds; `--write` rewrites it. **Never commit a real document.**
 
 ## Container smoke (`server/smoke.js`)
@@ -55,18 +68,37 @@ that made them). A wanted visual change is announced in the PR, which updates th
 |---|---|---|---|
 | E1-empty | first visit, no file (light and dark) | open `/` | the editor started (engine and fonts loaded) |
 | E2-not-a-pdf | a file that is not a PDF | give a text file to "Open PDF" | error message, start screen kept |
+| E3-protected | a PDF protected by a password | give `visual/protected.pdf` | message naming the password, start screen kept, Download disabled |
+| E4-could-not-start | the PDF engine cannot load | block the WebAssembly file, reload | the page says so, both Open buttons disabled |
+| E5-drag-over | a file dragged over the window | `dragenter` | the drop area is outlined |
 | D1-opened | a PDF opened, Edit tool | open the fixture | the texts of the page are boxed |
 | D2-text-box-open | a text of the file being edited | click the title | the box holds the text of the file, in Lato |
-| D3-text-changed | the title changed (light and dark) | type "Devis F-001", Esc | the edit is one selected text object, undo is enabled, the panel shows Lato |
-| D4-text-added | a new text, styled from the panel | Text tool, click, type, then bold, size 22, red | the panel applied the style |
-| D5-shapes | rectangle, ellipse, freehand, arrow | each tool, drag on the page | four objects, the arrow selected with its two end handles |
-| D6-image | an image with transparency | give a PNG to "Image" | selected, four handles |
+| D3-text-changed | the title changed (light and dark) | type "Devis F-001", Esc | one selected text object, undo enabled, panel shows Lato |
+| D4-text-added | a new text, styled from the panel | Text tool, click, type, then bold, size 22, red, right aligned, Times | Edit tool is back, the text grew with its size, right alignment kept its right edge, font applied |
+| D5-shapes | rectangle (filled, dashed, 60 %), ellipse, freehand, arrow | each tool, drag on the page | four objects, arrow selected with two end handles, a click without a drag draws nothing |
+| D6-image | an image with transparency, resized | give a PNG to "Image", drag a corner | proportions kept; a file that is not an image is refused with a message |
 | D7-erased | an area erased | Erase tool, drag over the date | the area is an eraser object |
-| D8-saved-reopened | the round trip | change the title, Download, open the downloaded file | the saved file opens, its only title is "Devis F-001", no pending edit |
+| D8-saved-reopened | the round trip | change the title, Download, open the downloaded file | its only title is "Devis F-001", no pending edit |
+| D9-existing-text-moved | a text of the file made bold and moved without retyping it | click the title, Esc, Bold, drag; Download, reopen | click + Esc + click elsewhere changes nothing (no object, undo disabled); the saved file has the title once, at the new place, bold Lato |
+| D10-undo-redo | undo and redo | change the title, draw a rectangle, undo button, Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z | object counts at each step, the title is the file's own again after undo, a new change clears redo |
+| D11-objects | objects moved, resized, ordered | draw, drag, drag a handle, arrow keys, Duplicate, Ctrl+C / paste, Ctrl+D, To back, To front, Del, undo, redo | position and size in points after each step, order of the objects, counts |
+| D12-existing-text-deleted | a text of the file deleted | click the title, Esc, Delete; Download, reopen | the title is not in the saved file, the other texts are |
+| D13-font-note | page 2, a text in a font the editor does not have | click "Police inconnue", Esc | the note names the font of the file and the replacement; a Helvetica text has no note and stays Helvetica; selecting texts is not an edit |
+| D14-font-added | a font file added by the visitor | change the title, give a TTF to "Add a font file" | it joins the font list, is applied (the text changes width), message; an unreadable file is refused |
+| D15-missing-characters | characters no font has | Text tool, type an emoji | the message that lists them |
+| D16-zoomed-page-2 | zoom and second page | zoom in twice, out, fit, in; thumbnail 2 | page width follows the zoom, fit returns to the first zoom, thumbnail 2 is current |
+| T1-text-tool | panel of the Text tool before any text | pick Text | title, default font, no object buttons |
+| T2-shape-tool | panel of the Rectangle tool | pick Rectangle | line and fill rows, no text rows |
+| T3-erase-tool | panel of the Eraser | pick Erase | cover colour only |
+
+These cases are also the tests of the editor itself (`web/js/app.js` has no other test): each one
+fails on a wrong state before any picture is compared.
 
 Not covered by a shot (covered by unit tests instead): each property of each object, since the page
 canvas is drawn by the engine and the engine's pixels are asserted in `engine.test.js`. Not covered
-at all yet: touch gestures on a real phone, drag and drop of a file from the desktop, paste of an image.
+at all yet: touch gestures on a real phone, the drop of a real file from the desktop (only the
+outline is), paste of an image from the clipboard, the line and ellipse handles, `Ctrl+wheel`,
+the warning before leaving the page with unsaved changes.
 
 ## Logs
 JSON lines on stdout (hosh-management AGENTS.md section 11): `ts`, `level`, `service` ("pdf"),

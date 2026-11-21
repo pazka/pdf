@@ -64,3 +64,12 @@ Sources read on 2026-11-21: ilovepdf.com/edit-pdf, its blog articles "How to edi
   says so and accepts the font file to restore the exact look.
 - Password-protected PDFs are refused.
 - Characters that no available font has (emoji, CJK) are written as "?" and reported.
+- A text that is clicked and left as it was (not retyped, moved or restyled) is not rewritten: the
+  file keeps its own glyphs. Once changed, it is rewritten whole in the editor's font.
+- A right-aligned text (an amount in a column) is adopted from its left edge: a longer text grows
+  to the right. Use the alignment buttons, which keep the text in place, before typing.
+- Text set with horizontal scaling or letter spacing in the file is rewritten at the font's normal
+  width and spacing.
+- What is removed when a text is edited is a band around its baseline (72 % of the font size above
+  it), so that lines set tight keep their neighbours. Lines closer than about 0.75 of their font
+  size (overlapping text) can still lose a neighbour.

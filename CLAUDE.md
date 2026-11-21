@@ -21,6 +21,9 @@ Live at **https://pdf.hosh.it** on the owner's hosh.it box. **`docs/BOX-CONTRACT
 - **Changing a text really changes the file:** the old glyphs are removed from the page (a redaction
   without the black box), the new text is written in the same font. Never "cover with a white box"
   for a text edit.
+- **Clicking a text is not an edit:** a text of the file that was clicked but not changed
+  (`isPristine`) is a selection handle only. It is never drawn, saved or kept in the undo history,
+  so the file keeps its own glyphs until the visitor really changes something.
 - **What is shown is what is saved:** the page canvas is drawn by `engine.preview()`, which runs the
   same `bake()` as `engine.exportPdf()`. Do not draw objects another way on screen.
 - **The opened file is never modified in memory:** every preview and every save starts from the

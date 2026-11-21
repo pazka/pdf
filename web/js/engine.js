@@ -54,11 +54,16 @@ export function matchFont(name, flags = {}) {
   for (const family of Object.keys(SHIPPED_FONTS)) {
     if (lower.startsWith(family.toLowerCase())) return { family, bold, italic, exact: true };
   }
+  // The name decides when it says what the font is. The flags of the file decide only for a name
+  // that says nothing: they are not reliable (MuPDF reports "serif" for every font it embedded
+  // itself, so a Helvetica text written by this editor would come back as Times).
+  if (/helvetica|arial|nimbussans|liberationsans/.test(lower)) return { family: "Helvetica", bold, italic, exact: true };
+  if (/courier|nimbusmono|liberationmono/.test(lower)) return { family: "Courier", bold, italic, exact: true };
+  if (/times|nimbusroman|liberationserif/.test(lower)) return { family: "Times", bold, italic, exact: true };
   let family = "Helvetica";
-  if (flags.mono || /courier|mono|consol/.test(lower)) family = "Courier";
-  else if (flags.serif || /times|serif|georgia|garamond|minion|cambria/.test(lower)) family = "Times";
-  const exact = /helvetica|arial|times|courier/.test(lower);
-  return { family, bold, italic, exact };
+  if (flags.mono || /mono|consol/.test(lower)) family = "Courier";
+  else if (!/sans|grotesk|gothic/.test(lower) && (flags.serif || /serif|georgia|garamond|minion|cambria/.test(lower))) family = "Times";
+  return { family, bold, italic, exact: false };
 }
 
 export function fontKey(family, bold, italic) {
@@ -217,12 +222,8 @@ export function createEngine(mupdf) {
   }
 
   function colorOf(c) {
-    if (typeof c === "number") return [((c >> 16) & 255) / 255, ((c >> 8) & 255) / 255, (c & 255) / 255];
-    if (!c || !c.length) return [0, 0, 0];
-    if (c.length === 1) return [c[0], c[0], c[0]];
-    if (c.length === 3) return [c[0], c[1], c[2]];
-    const [cy, m, y, k] = c; // CMYK
-    return [(1 - cy) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k)];
+    // MuPDF gives the colour of a character as RGB, whatever the file used (grey, CMYK...)
+    return c && c.length === 3 ? [c[0], c[1], c[2]] : [0, 0, 0];
   }
 
   /**
@@ -257,6 +258,9 @@ export function createEngine(mupdf) {
         const same =
           run && run.fontName === name && Math.abs(run.size - size) < 0.01 && run.color.every((v, i) => Math.abs(v - rgb[i]) < 0.004);
         if (!same) {
+          // a run never starts with a space (MuPDF adds one between words set apart): the run would
+          // start left of its first letter
+          if (c.trim() === "") return;
           run = {
             text: "", fontName: name, size, color: rgb, x: origin[0], y: origin[1],
             flags: { bold: font.isBold(), italic: font.isItalic(), serif: font.isSerif(), mono: font.isMono() },
@@ -278,13 +282,17 @@ export function createEngine(mupdf) {
     // what a keyboard types: the glyph of "-" is often mapped back to U+2010 by the font
     // (and the glyph of the space to U+00A0)
     const clean = (t) => t.replace(/ /g, " ").replace(/\s+$/, "").replace(/[‐‑]/g, "-");
+    // What is removed from the page when a run is edited: a band around its baseline, not its
+    // line box. The box of a font can be much taller than the line spacing (13.7 pt for standard
+    // Helvetica at 10 pt), and a rectangle that tall also removes the lines above and below.
+    const band = (r) => [r.x0, r.y - r.size * 0.72, r.x1, r.y + r.size * 0.02];
     const pieceOf = (r) => {
       const trimmed = clean(r.text);
       const m = matchFont(r.fontName, r.flags);
       return {
         text: trimmed, x: r.x, y: r.y, size: r.size, family: m.family, bold: m.bold, italic: m.italic,
         exactFont: m.exact, fontName: stripSubsetTag(r.fontName), color: r.color, align: "left", lineHeight: 1.2,
-        rects: [[r.x0, r.y0, r.x1, r.y1]], bbox: [r.x0, r.y0, r.x1, r.y1],
+        rects: [band(r)], bbox: [r.x0, r.y0, r.x1, r.y1],
       };
     };
     for (const b of blocks) {
@@ -330,10 +338,10 @@ export function createEngine(mupdf) {
         if (regular) {
           p.text = lines.map(([r]) => clean(r.text)).join("\n");
           p.lineHeight = step / first.size;
-          p.rects = lines.map(([r]) => [r.x0, r.y0, r.x1, r.y1]);
+          p.rects = lines.map(([r]) => band(r));
           p.bbox = [
-            Math.min(...p.rects.map((r) => r[0])), Math.min(...p.rects.map((r) => r[1])),
-            Math.max(...p.rects.map((r) => r[2])), Math.max(...p.rects.map((r) => r[3])),
+            Math.min(...lines.map(([r]) => r.x0)), Math.min(...lines.map(([r]) => r.y0)),
+            Math.max(...lines.map(([r]) => r.x1)), Math.max(...lines.map(([r]) => r.y1)),
           ];
           pieces.push(p);
           continue;
@@ -408,25 +416,30 @@ export function createEngine(mupdf) {
     for (const o of objects) {
       const rects = o.type === "erase" ? [[o.x, o.y, o.x + o.w, o.y + o.h]] : o.redact || [];
       for (const r of rects) {
-        // a little less than the line box, so the lines above and below stay
-        const inset = o.type === "erase" ? 0 : Math.min(1.5, (r[3] - r[1]) * 0.18);
         const a = page.createAnnotation("Redact");
-        a.setRect([r[0], r[1] + inset, r[2], r[3] - inset]);
+        a.setRect(r);
         redactions += 1;
       }
     }
     if (redactions) page.applyRedactions(false, mupdf.PDFPage.REDACT_IMAGE_NONE, mupdf.PDFPage.REDACT_LINE_ART_NONE, mupdf.PDFPage.REDACT_TEXT_REMOVE);
 
     // 2. resources
-    let res = pageObj.get("Resources");
-    if (res.isNull()) {
-      const inherited = pageObj.getInheritable("Resources");
-      // a copy, so a page never edits the dictionary its siblings inherit
-      const copy = doc.newDictionary();
-      if (!inherited.isNull()) inherited.forEach((v, k) => copy.put(k, v));
-      pageObj.put("Resources", copy);
-      res = pageObj.get("Resources");
+    // The page gets Resources of its own: a copy of what it has or inherits, the three dictionaries
+    // that get new entries (Font, XObject, ExtGState) copied too. Pages very often share one
+    // Resources dictionary, or its Font dictionary, and what is added here belongs to this page only.
+    const source = pageObj.getInheritable("Resources");
+    const copy = doc.newDictionary();
+    if (!source.isNull()) {
+      source.forEach((v, k) => {
+        if (["Font", "XObject", "ExtGState"].includes(k) && v.isDictionary()) {
+          const inner = doc.newDictionary();
+          v.forEach((vv, kk) => inner.put(kk, vv));
+          copy.put(k, inner);
+        } else copy.put(k, v);
+      });
     }
+    pageObj.put("Resources", copy);
+    const res = pageObj.get("Resources");
     const fontDict = () => ensureDict(doc, res, "Font");
     const xobjDict = () => ensureDict(doc, res, "XObject");
     const gsDict = () => ensureDict(doc, res, "ExtGState");
@@ -641,10 +654,26 @@ export function createEngine(mupdf) {
 
 /** A text object that replaces a piece of existing text (see extractText). */
 export function adoptPiece(piece, id) {
-  return {
+  const o = {
     id, type: "text", text: piece.text, x: piece.x, y: piece.y, size: piece.size,
     family: piece.family, bold: piece.bold, italic: piece.italic, color: piece.color,
     align: piece.align, lineHeight: piece.lineHeight, opacity: 1, underline: false, strike: false,
     redact: piece.rects, original: piece.text, fontName: piece.fontName, exactFont: piece.exactFont,
   };
+  o.pristine = look(o);
+  return o;
+}
+
+/** Everything of a text object that shows on the page. */
+function look(o) {
+  return JSON.stringify([o.text, o.x, o.y, o.size, o.family, !!o.bold, !!o.italic, o.color, o.align, o.lineHeight, o.opacity ?? 1, !!o.underline, !!o.strike, o.rotation || 0]);
+}
+
+/**
+ * True for a text of the file that was clicked but not changed in any way (text, place, style).
+ * Such an object is only a handle on the page's own text: it is never written to the file, so
+ * clicking a text and leaving it leaves the PDF exactly as it was.
+ */
+export function isPristine(o) {
+  return !!o.pristine && o.pristine === look(o);
 }
