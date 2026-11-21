@@ -208,13 +208,13 @@ export const CASES = [
   },
   {
     // the PDF engine cannot be loaded (old browser, blocked WebAssembly): the page says so
-    id: "E4-could-not-start", path: "/",
+    id: "E4-could-not-start", path: "/", expectError: /fetching of the wasm failed/,
     steps: async (p, base) => {
       await p.send("Network.enable");
       await p.send("Network.setBlockedURLs", { urls: ["*mupdf-wasm.wasm*"] });
       await p.goto(`${base}/`);
       await must(p, "document.documentElement.dataset.state === 'failed'", "the editor did not report that it could not start", 30000);
-      await check(p, "!document.getElementById('boot-error').hidden && /could not start/.test(document.getElementById('boot-error').textContent) && document.getElementById('open-big').disabled && document.getElementById('open').disabled", "no start error on the page");
+      await check(p, "!document.getElementById('boot-error').hidden && /could not start: its PDF engine did not load/.test(document.getElementById('boot-error').textContent) && document.getElementById('open-big').disabled && document.getElementById('open').disabled", "no start error on the page");
     },
   },
   {

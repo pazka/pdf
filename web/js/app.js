@@ -1044,7 +1044,8 @@ async function boot() {
     root.dataset.state = "failed";
     const el = $("boot-error");
     el.hidden = false;
-    el.textContent = `The editor could not start in this browser (${err.message || err}).`;
+    // the reason is in the console; the visitor gets what to do about it
+    el.textContent = "The editor could not start: its PDF engine did not load. Reload the page, or use a recent version of Chrome, Edge, Firefox or Safari.";
     $("open-big").disabled = true;
     $("open").disabled = true;
   }

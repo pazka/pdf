@@ -73,7 +73,8 @@ async function shoot(c, width, dark) {
   })()`);
   await p.evaluate("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(true))))");
   const { data } = await p.send("Page.captureScreenshot", { format: "png", captureBeyondViewport: true, fromSurface: true });
-  const errors = [...p.errors];
+  // c.expectError: an error the case provokes on purpose (the engine that cannot load)
+  const errors = [...p.errors].filter((e) => !(c.expectError && c.expectError.test(e)));
   await p.close();
   return { png: Buffer.from(data, "base64"), errors };
 }
