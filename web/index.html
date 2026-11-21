@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en" data-state="boot">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pdf.hosh.it: edit a PDF in your browser</title>
+<meta name="description" content="Change the text of a PDF, add text, images and shapes. The file never leaves your device.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/app.css">
+<script type="module" src="/js/app.js"></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/" aria-label="pdf.hosh.it">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 2v5h5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 17l1-3 5-5 2 2-5 5z" fill="currentColor"/></svg>
+    <span>pdf<small>.hosh.it</small></span>
+  </a>
+  <button type="button" id="open" class="btn">Open<span class="long"> PDF</span></button>
+  <span id="filename" class="filename"></span>
+  <span class="grow"></span>
+  <div class="group" role="group" aria-label="History">
+    <button type="button" id="undo" class="icon" title="Undo (Ctrl+Z)" aria-label="Undo" disabled>
+      <svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5M4 12h10a6 6 0 0 1 0 12" transform="translate(0 -5)" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button type="button" id="redo" class="icon" title="Redo (Ctrl+Y)" aria-label="Redo" disabled>
+      <svg viewBox="0 0 24 24"><path d="M15 7l5 5-5 5M20 12H10a6 6 0 0 0 0 12" transform="translate(0 -5)" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+  <div class="group" role="group" aria-label="Zoom">
+    <button type="button" id="zoom-out" class="icon" title="Zoom out" aria-label="Zoom out">−</button>
+    <button type="button" id="zoom-fit" class="zoom" title="Fit the width">100%</button>
+    <button type="button" id="zoom-in" class="icon" title="Zoom in" aria-label="Zoom in">+</button>
+  </div>
+  <button type="button" id="save" class="btn primary" disabled>Download<span class="long"> PDF</span></button>
+</header>
+
+<nav class="tools" id="tools" aria-label="Tools">
+  <button type="button" data-tool="select" class="on" title="Select, move, and click a text to edit it (V)">
+    <svg viewBox="0 0 24 24"><path d="M6 3l12 9-5 1 3 6-2 1-3-6-4 3z" fill="currentColor"/></svg><span>Edit</span>
+  </button>
+  <button type="button" data-tool="text" title="Add text (T)">
+    <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16M9 20h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Text</span>
+  </button>
+  <button type="button" data-tool="image" title="Add an image (PNG with transparency, JPEG)">
+    <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="10" r="1.7" fill="currentColor"/><path d="M4 18l5-5 3 3 3-4 5 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Image</span>
+  </button>
+  <button type="button" data-tool="rect" title="Rectangle (R)">
+    <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Rectangle</span>
+  </button>
+  <button type="button" data-tool="ellipse" title="Ellipse (O)">
+    <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8" ry="6" fill="none" stroke="currentColor" stroke-width="2"/></svg><span>Ellipse</span>
+  </button>
+  <button type="button" data-tool="line" title="Line (L)">
+    <svg viewBox="0 0 24 24"><path d="M5 19L19 5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><span>Line</span>
+  </button>
+  <button type="button" data-tool="arrow" title="Arrow (A)">
+    <svg viewBox="0 0 24 24"><path d="M5 19L19 5M11 5h8v8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Arrow</span>
+  </button>
+  <button type="button" data-tool="ink" title="Draw (D)">
+    <svg viewBox="0 0 24 24"><path d="M4 20l1-4L16 5l3 3L8 19z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg><span>Draw</span>
+  </button>
+  <button type="button" data-tool="erase" title="Erase an area: the text under it is removed (E)">
+    <svg viewBox="0 0 24 24"><path d="M4 16l9-10 7 6-7 8H8zM10 20h10" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg><span>Erase</span>
+  </button>
+</nav>
+
+<div class="work">
+  <aside class="thumbs" id="thumbs" aria-label="Pages"></aside>
+
+  <main class="stage" id="stage">
+    <section class="drop" id="drop">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l5 5v15H6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M14 2v5h5M12 18v-7M9 13l3-3 3 3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/></svg>
+      <h1>Edit a PDF</h1>
+      <p>Change the text that is already in the file, add text, images and shapes, then download it.</p>
+      <button type="button" id="open-big" class="btn primary big">Choose a PDF</button>
+      <p class="hint">or drop a file here</p>
+      <p class="privacy">The file stays on this device. Nothing is uploaded: the editor runs in your browser.</p>
+      <p class="error" id="boot-error" hidden></p>
+    </section>
+    <div class="pages" id="pages" hidden></div>
+  </main>
+
+  <aside class="props" id="props" aria-label="Properties" hidden>
+    <h2 id="props-title">Text</h2>
+    <p class="note" id="font-note" hidden></p>
+    <div class="row" data-for="text">
+      <label class="wide">Font
+        <select id="p-family"></select>
+      </label>
+      <label>Size
+        <input id="p-size" type="number" min="1" max="400" step="0.5">
+      </label>
+    </div>
+    <div class="row" data-for="text">
+      <div class="seg" role="group" aria-label="Style">
+        <button type="button" id="p-bold" title="Bold (Ctrl+B)"><b>B</b></button>
+        <button type="button" id="p-italic" title="Italic (Ctrl+I)"><i>I</i></button>
+        <button type="button" id="p-underline" title="Underline (Ctrl+U)"><u>U</u></button>
+        <button type="button" id="p-strike" title="Strikethrough"><s>S</s></button>
+      </div>
+      <div class="seg" role="group" aria-label="Alignment">
+        <button type="button" data-align="left" title="Align left"><svg viewBox="0 0 24 24"><path d="M4 6h16M4 11h10M4 16h16M4 21h10" transform="translate(0 -1.5)" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button type="button" data-align="center" title="Center"><svg viewBox="0 0 24 24"><path d="M4 6h16M7 11h10M4 16h16M7 21h10" transform="translate(0 -1.5)" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+        <button type="button" data-align="right" title="Align right"><svg viewBox="0 0 24 24"><path d="M4 6h16M10 11h10M4 16h16M10 21h10" transform="translate(0 -1.5)" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      </div>
+    </div>
+    <div class="row" data-for="text">
+      <label>Colour <input id="p-color" type="color"></label>
+      <button type="button" id="p-font-add" class="link">Add a font file…</button>
+    </div>
+    <div class="row" data-for="stroke">
+      <label>Line <input id="p-stroke" type="color"></label>
+      <label>Width <input id="p-stroke-width" type="number" min="0" max="60" step="0.5"></label>
+      <label class="check"><input id="p-dash" type="checkbox"> Dashed</label>
+    </div>
+    <div class="row" data-for="fill">
+      <label>Fill <input id="p-fill" type="color"></label>
+      <label class="check"><input id="p-fill-on" type="checkbox"> Filled</label>
+    </div>
+    <div class="row" data-for="opacity">
+      <label class="wide">Opacity <input id="p-opacity" type="range" min="0.05" max="1" step="0.05"></label>
+    </div>
+    <div class="row" data-for="object">
+      <button type="button" id="p-front" class="mini" title="Bring to the front">To front</button>
+      <button type="button" id="p-back" class="mini" title="Send to the back">To back</button>
+      <button type="button" id="p-dup" class="mini" title="Duplicate (Ctrl+D)">Duplicate</button>
+      <button type="button" id="p-del" class="mini danger" title="Delete (Del)">Delete</button>
+    </div>
+    <p class="help" id="props-help"></p>
+  </aside>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<input type="file" id="file" accept="application/pdf,.pdf" hidden>
+<input type="file" id="image-file" accept="image/png,image/jpeg" hidden>
+<input type="file" id="font-file" accept=".ttf,.otf,font/ttf,font/otf" hidden>
+</body>
+</html>

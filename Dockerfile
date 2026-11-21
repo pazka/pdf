@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+# pdf: a PDF editor that runs in the browser (MuPDF.js), served by a ~200-line Node stdlib server.
+# Box contract rules 1-4, 12: distroless, uid 10001, read-only, no state, base images pinned by digest.
+
+FROM node:26.13.1-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS build
+WORKDIR /src
+# Dependencies first: frozen lockfile, no install scripts, nothing younger than 7 days (.npmrc).
+COPY package.json package-lock.json .npmrc ./
+RUN npm ci --no-audit
+COPY scripts ./scripts
+COPY web ./web
+COPY server ./server
+COPY test ./test
+# build = web/ + MuPDF.js copied into dist/ + brotli/gzip twins; then the tests (engine and server)
+RUN npm run build && npm test
+
+FROM gcr.io/distroless/nodejs26-debian13:nonroot@sha256:1d736cf8b5716c07a245301f92717143215d248fd55771ee1936ef4b3302e531
+ARG VERSION=dev
+ARG REVISION=unknown
+LABEL org.opencontainers.image.title="pdf" \
+      org.opencontainers.image.description="Edit a PDF in the browser; the file never leaves the visitor's device" \
+      org.opencontainers.image.source="https://github.com/pazka/pdf" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${REVISION}"
+ENV NODE_ENV=production APP_VERSION=${VERSION}
+COPY --from=build /src/server /app/server
+COPY --from=build /src/dist /app/dist
+USER 10001:10001
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["/nodejs/bin/node", "/app/server/healthcheck.js"]
+# Node permission model: the server may read /app and use the network (it must listen; Node >= 25
+# gates sockets under --permission) and nothing else (no writes, no child processes, no workers,
+# no native addons). The distroless entrypoint is /nodejs/bin/node.
+CMD ["--permission", "--allow-fs-read=/app/", "--allow-net", "/app/server/main.js"]
