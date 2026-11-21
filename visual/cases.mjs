@@ -596,6 +596,21 @@ export const CASES = [
       await key(p, "Enter");
       await must(p, "document.activeElement?.classList.contains('editor') && document.activeElement.value === 'Abc'", "Enter did not open the selected text");
       await key(p, "Escape");
+      // a text that was typed can be typed in again: a click on it while it is selected opens its
+      // text box, and so does a double click on it when it is not selected
+      const t2 = await box(p);
+      const mid = [t2[0] + t2[2] / 2, t2[1] + t2[3] / 2];
+      await clickAt(p, ...mid);
+      await must(p, "document.activeElement?.classList.contains('editor') && document.activeElement.value === 'Abc'", "a click on the selected text did not open its text box");
+      await key(p, "Escape");
+      await key(p, "Escape");
+      await check(p, "!document.querySelector('.obj.sel')", "Escape did not unselect the text");
+      // (two clicks, each aimed anew: on a phone the panel that opens at the first one moves the page)
+      await clickAt(p, ...mid);
+      await clickAt(p, ...mid);
+      await must(p, "document.activeElement?.classList.contains('editor') && document.activeElement.value === 'Abc'", "a double click on a text did not open its text box");
+      await key(p, "Escape");
+      await check(p, "document.querySelectorAll('.obj.sel[data-type=text]').length === 1", "the text is not selected after its text box closed");
       // an image dropped on the page lands where it is dropped
       const [dx, dy] = await at(p, 480, 330);
       await p.evaluate(`(() => {

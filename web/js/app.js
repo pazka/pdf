@@ -513,7 +513,8 @@ function translate(o, from, dx, dy) {
   }
 }
 
-function startMove(e, page, o) {
+/** Drags object `o`. `onClick` runs when the pointer is released without having moved. */
+function startMove(e, page, o, onClick) {
   const before = snap();
   const from = JSON.parse(JSON.stringify(o));
   const p0 = toPage(e, page);
@@ -527,6 +528,7 @@ function startMove(e, page, o) {
     refreshPage(page);
   }, () => {
     if (moved) pushUndo(before);
+    else if (onClick) onClick();
   });
 }
 
@@ -628,12 +630,10 @@ function onPointerDown(e, page) {
       if (!o) return;
       const again = S.sel && S.sel.id === o.id;
       select(page.index, o.id);
-      if (o.type === "text" && (e.detail >= 2 || (again && e.pointerType === "touch"))) {
-        e.preventDefault();
-        startEdit(page, o);
-        return;
-      }
-      startMove(e, page, o);
+      // a click on the text that is already selected opens its text box (so does a double click:
+      // its first click selects). A drag moves the text. The click count cannot be read here:
+      // `detail` of a pointerdown is always 0.
+      startMove(e, page, o, again && o.type === "text" ? () => startEdit(page, o) : null);
       return;
     }
     if (t.dataset.piece) {
