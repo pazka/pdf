@@ -73,7 +73,7 @@ async function at(p, x, y, page = 0) {
   })()`);
 }
 
-const mouse = (p, type, [x, y], buttons, clickCount = 1) => p.send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons, clickCount, pointerType: "mouse" });
+const mouse = (p, type, [x, y], buttons, clickCount = 1, modifiers = 0) => p.send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons, clickCount, modifiers, pointerType: "mouse" });
 
 async function clickAt(p, x, y, page = 0, count = 1) {
   const c = await at(p, x, y, page);
@@ -85,16 +85,17 @@ async function clickAt(p, x, y, page = 0, count = 1) {
   await sleep(100);
 }
 
-async function dragOn(p, points, page = 0) {
+/** A drag through the points; modifiers: 8 = Shift held. */
+async function dragOn(p, points, page = 0, modifiers = 0) {
   const cs = [];
   for (const [x, y] of points) cs.push(await at(p, x, y, page));
-  await mouse(p, "mouseMoved", cs[0], 0);
-  await mouse(p, "mousePressed", cs[0], 1);
+  await mouse(p, "mouseMoved", cs[0], 0, 1, modifiers);
+  await mouse(p, "mousePressed", cs[0], 1, 1, modifiers);
   for (const c of cs.slice(1)) {
-    await mouse(p, "mouseMoved", c, 1);
+    await mouse(p, "mouseMoved", c, 1, 1, modifiers);
     await sleep(30);
   }
-  await mouse(p, "mouseReleased", cs[cs.length - 1], 0);
+  await mouse(p, "mouseReleased", cs[cs.length - 1], 0, 1, modifiers);
   await sleep(100);
 }
 
@@ -124,6 +125,13 @@ const box = (p) => p.evaluate(`(() => {
   if (!e) return null;
   const r = e.getBoundingClientRect(), o = e.parentElement.getBoundingClientRect(), z = o.width / 595;
   return [(r.left - o.left + 3) / z, (r.top - o.top + 3) / z, (r.width - 6) / z, (r.height - 6) / z].map((v) => Math.round(v * 10) / 10);
+})()`);
+/** Colour of the page as it is drawn, at a point given in PDF points. */
+const pixel = (p, x, y, page = 0) => p.evaluate(`(() => {
+  const c = document.querySelector('.page[data-index="${page}"] canvas');
+  const k = c.width / 595;
+  const d = c.getContext("2d").getImageData(Math.round(${x} * k), Math.round(${y} * k), 1, 1).data;
+  return [d[0], d[1], d[2]];
 })()`);
 const count = (p, selector) => p.evaluate(`document.querySelectorAll(${JSON.stringify(selector)}).length`);
 const closeTo = (a, b, tol = 1.5) => Math.abs(a - b) <= tol;
@@ -534,6 +542,76 @@ export const CASES = [
       await press(p, "zoom-in");
       await page2(p);
       await check(p, "document.querySelector('.thumb.on')?.title === 'Page 2'", "the thumbnail of page 2 is not the current one");
+      await settle(p);
+    },
+  },
+
+  {
+    // keys, panel inputs and gestures that change what is saved, each checked on the page's pixels
+    id: "D17-keys-and-inputs", path: "/",
+    steps: async (p) => {
+      await captureDownloads(p);
+      await opened(p);
+      const on = () => p.evaluate("document.querySelector('#tools .on').dataset.tool");
+      for (const [k, name] of [["r", "rect"], ["o", "ellipse"], ["a", "arrow"], ["d", "ink"], ["e", "erase"], ["t", "text"], ["v", "select"], ["l", "line"]]) {
+        await key(p, k);
+        if ((await on()) !== name) throw new Error(`key ${k} did not pick the ${name} tool`);
+      }
+      // a line, then its width and colour from the panel
+      await dragOn(p, [[330, 200], [390, 200], [450, 200]]);
+      await p.evaluate(`(() => {
+        const w = document.getElementById('p-stroke-width'); w.value = '8'; w.dispatchEvent(new Event('change'));
+        const c = document.getElementById('p-stroke'); c.value = '#ff0000'; c.dispatchEvent(new Event('input')); c.dispatchEvent(new Event('change'));
+        return true;
+      })()`);
+      await must(p, idle, "not redrawn");
+      const line = await pixel(p, 390, 202.2);
+      if (!(line[0] > 230 && line[1] < 30 && line[2] < 30)) throw new Error(`2.2 pt off the middle of a line 8 wide (2 by default), set to red: rgb(${line})`);
+      // the eraser's colour, chosen before erasing
+      await key(p, "e");
+      await p.evaluate("(() => { const c = document.getElementById('p-fill'); c.value = '#00c000'; c.dispatchEvent(new Event('input')); c.dispatchEvent(new Event('change')); return true; })()");
+      await dragOn(p, [[330, 230], [360, 245], [400, 260]]);
+      await must(p, idle, "not redrawn");
+      const erased = await pixel(p, 365, 245);
+      if (!(erased[0] < 30 && erased[1] > 170 && erased[2] < 30)) throw new Error(`erased area in the chosen colour: rgb(${erased})`);
+      // a rectangle resized with Shift: its proportions are kept
+      await key(p, "r");
+      await dragOn(p, [[430, 230], [470, 240], [510, 270]]);
+      const r0 = await box(p);
+      await dragOn(p, [[510, 270], [520, 272], [540, 275]], 0, 8);
+      const r1 = await box(p);
+      if (!(r1[2] > r0[2] + 10 && closeTo(r1[2] / r1[3], r0[2] / r0[3], 0.05))) throw new Error(`Shift-resize did not keep the proportions: ${r0} -> ${r1}`);
+      // a text: its corner handle scales it; Ctrl+B, Ctrl+I, Ctrl+U; Enter opens it again
+      await key(p, "t");
+      await clickAt(p, 330, 300);
+      await p.send("Input.insertText", { text: "Abc" });
+      await key(p, "Escape");
+      const t0 = await box(p);
+      await dragOn(p, [[t0[0] + t0[2], t0[1] + t0[3]], [t0[0] + t0[2] + 5, t0[1] + t0[3] + 8], [t0[0] + t0[2] + 10, t0[1] + t0[3] + 17]]);
+      const size = Number(await p.evaluate("document.getElementById('p-size').value"));
+      const t1 = await box(p);
+      if (!(size >= 26 && size <= 30 && closeTo(t1[1], t0[1], 1.5))) throw new Error(`the corner handle of a 14 pt text dragged 17 pt down: size ${size}, box ${t0} -> ${t1}`);
+      for (const k of ["b", "i", "u"]) await key(p, k, { ctrl: true });
+      await check(p, "['p-bold', 'p-italic', 'p-underline'].every((id) => document.getElementById(id).classList.contains('on'))", "Ctrl+B, Ctrl+I, Ctrl+U");
+      await key(p, "Enter");
+      await must(p, "document.activeElement?.classList.contains('editor') && document.activeElement.value === 'Abc'", "Enter did not open the selected text");
+      await key(p, "Escape");
+      // an image dropped on the page lands where it is dropped
+      const [dx, dy] = await at(p, 480, 330);
+      await p.evaluate(`(() => {
+        const bytes = Uint8Array.from(atob(${JSON.stringify(IMAGE)}), (c) => c.charCodeAt(0));
+        const dt = new DataTransfer();
+        dt.items.add(new File([bytes], "stamp.png", { type: "image/png" }));
+        document.querySelector('.page[data-index="0"] .overlay').dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt, clientX: ${dx}, clientY: ${dy} }));
+        return true;
+      })()`);
+      await must(p, "document.querySelector('.obj.sel')?.dataset.type === 'image'", "the dropped image is not on the page");
+      const im = await box(p);
+      if (!(closeTo(im[0] + im[2] / 2, 480, 2) && closeTo(im[1] + im[3] / 2, 330, 2))) throw new Error(`the image was dropped at 480,330 and is at ${im}`);
+      // Ctrl+S downloads
+      await key(p, "s", { ctrl: true });
+      await must(p, "!!window.__saved && Number(document.documentElement.dataset.saved) > 10000", "Ctrl+S wrote nothing");
+      if ((await count(p, ".obj")) !== 5) throw new Error("not five objects at the end");
       await settle(p);
     },
   },

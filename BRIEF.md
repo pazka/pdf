@@ -70,6 +70,8 @@ Sources read on 2026-11-21: ilovepdf.com/edit-pdf, its blog articles "How to edi
   to the right. Use the alignment buttons, which keep the text in place, before typing.
 - Text set with horizontal scaling or letter spacing in the file is rewritten at the font's normal
   width and spacing.
-- What is removed when a text is edited is a band around its baseline (72 % of the font size above
-  it), so that lines set tight keep their neighbours. Lines closer than about 0.75 of their font
-  size (overlapping text) can still lose a neighbour.
+- What is removed when a text is edited is a thin band through the middle of its letters, so that
+  lines set tight keep their neighbours. Measured and tested: neighbours are kept down to a line
+  spacing of 0.85 of the font size (8.5 pt between 10 pt lines) in Helvetica, Times, Courier and
+  Lato. Below that (lines that overlap), the part of the next line that lies under the edited line
+  can be removed with it; the page shows it at once, and undo brings it back.

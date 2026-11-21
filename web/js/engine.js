@@ -282,10 +282,13 @@ export function createEngine(mupdf) {
     // what a keyboard types: the glyph of "-" is often mapped back to U+2010 by the font
     // (and the glyph of the space to U+00A0)
     const clean = (t) => t.replace(/ /g, " ").replace(/\s+$/, "").replace(/[‐‑]/g, "-");
-    // What is removed from the page when a run is edited: a band around its baseline, not its
-    // line box. The box of a font can be much taller than the line spacing (13.7 pt for standard
-    // Helvetica at 10 pt), and a rectangle that tall also removes the lines above and below.
-    const band = (r) => [r.x0, r.y - r.size * 0.72, r.x1, r.y + r.size * 0.02];
+    // What is removed from the page when a run is edited: a thin band through the middle of its
+    // letters (from 55 % to 15 % of the font size above the baseline), not its line box. The box
+    // of a font can be much taller than the line spacing (13.7 pt for standard Helvetica at
+    // 10 pt), and a rectangle that tall also removes the lines above and below. Measured with this
+    // band (test "lines set tight"): neighbours are kept down to a line spacing of 0.85 of the
+    // font size in Helvetica, Times, Courier and Lato; a taller band loses them from 0.95.
+    const band = (r) => [r.x0, r.y - r.size * 0.55, r.x1, r.y - r.size * 0.15];
     const pieceOf = (r) => {
       const trimmed = clean(r.text);
       const m = matchFont(r.fontName, r.flags);

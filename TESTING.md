@@ -31,15 +31,16 @@ image (`docker run --rm -v "$PWD:/src" -w /src node:26.13.1-trixie-slim … npm 
 - `engine-files.test.js`: the engine against the kinds of PDF other programs write and against its
   own output opened again: every family and style read back as written; edit, save, reopen, edit
   again keeps the font; a file written by the editor then edited with another font keeps the fonts
-  of the texts already there; lines set tight (10 pt Helvetica 10 pt apart, Lato at line spacing 1.0)
-  keep their neighbours; words split on one baseline are one piece; grey and CMYK colours; pages
+  of the texts already there; lines set tight keep their neighbours down to 0.85 of the font size
+  (standard Helvetica, Times, Courier; embedded Lato, Helvetica, Times, Courier); words split on one baseline are one piece; grey and CMYK colours; pages
   that inherit or share their Resources; the q ... Q wrapping; a font file added by the visitor; a
   font the editor does not have; a text clicked and not changed is not an edit (`isPristine`); a
   password-protected file.
-- The engine tests were checked by breaking the engine one behaviour at a time (20 mutations: font
-  name reuse, redaction band, image flipped, no arrow head, eraser cover, fallback font, q wrapping,
-  strikethrough, dash, rotation, Resources copy, run joining, underline, opacity, alignment, font
-  flags, centring, subsetting...): each one makes a test fail. Do the same when adding a behaviour.
+- `test/mutations.sh` breaks the engine one behaviour at a time (24 mutations: font name reuse,
+  the redaction band three ways, image flipped, image / text / shape opacity, arrow head and its
+  colour, eraser cover, fallback font, q wrapping, strikethrough, underline, dash, line width,
+  rotation, alignment, Resources copy, run joining, font flags, centring, subsetting): each one must
+  make a test fail. Run it, and add a line to it, when adding a behaviour to the engine.
 - `server.test.js`: `/healthz` (engine and fonts present), strict CSP, WebAssembly and font content
   types, revalidation, brotli, no dotfile / traversal / listing, read-only methods.
 - `log.test.js`: the JSON log lines (startup, errors, request lines) and that no path or query
@@ -87,6 +88,7 @@ that made them). A wanted visual change is announced in the PR, which updates th
 | D14-font-added | a font file added by the visitor | change the title, give a TTF to "Add a font file" | it joins the font list, is applied (the text changes width), message; an unreadable file is refused |
 | D15-missing-characters | characters no font has | Text tool, type an emoji | the message that lists them |
 | D16-zoomed-page-2 | zoom and second page | zoom in twice, out, fit, in; thumbnail 2 | page width follows the zoom, fit returns to the first zoom, thumbnail 2 is current |
+| D17-keys-and-inputs | keys, panel inputs and gestures that change what is saved | tool keys V T R O L A D E; a line set to 8 wide and red; the eraser's colour; Shift-resize; the corner handle of a text; Ctrl+B / I / U; Enter; an image dropped on the page; Ctrl+S | each tool key picks its tool; the page's pixels show the width, the colour and the eraser colour; proportions kept; text size follows the handle; the image lands where it is dropped; Ctrl+S writes the file |
 | T1-text-tool | panel of the Text tool before any text | pick Text | title, default font, no object buttons |
 | T2-shape-tool | panel of the Rectangle tool | pick Rectangle | line and fill rows, no text rows |
 | T3-erase-tool | panel of the Eraser | pick Erase | cover colour only |
@@ -96,9 +98,10 @@ fails on a wrong state before any picture is compared.
 
 Not covered by a shot (covered by unit tests instead): each property of each object, since the page
 canvas is drawn by the engine and the engine's pixels are asserted in `engine.test.js`. Not covered
-at all yet: touch gestures on a real phone, the drop of a real file from the desktop (only the
-outline is), paste of an image from the clipboard, the line and ellipse handles, `Ctrl+wheel`,
-the warning before leaving the page with unsaved changes.
+at all yet: touch gestures on a real phone, the drop of a real PDF from the desktop (the outline
+and the drop of an image are), paste of an image from the clipboard, the end handles of a line and
+the handles of an ellipse, `Ctrl+wheel`, `Ctrl+O`, `Esc` to deselect, the question asked before a
+second file replaces unsaved changes, the warning before leaving the page with unsaved changes.
 
 ## Logs
 JSON lines on stdout (hosh-management AGENTS.md section 11): `ts`, `level`, `service` ("pdf"),

@@ -98,31 +98,42 @@ test("a file written by the editor, edited with another font: the texts already 
   assert.deepEqual(after2.filter((p) => !["Un", "Deux"].includes(p.text)).map(key), p2.map(key));
 });
 
-test("lines set tight in a standard font: changing one keeps the lines above and below", () => {
-  // 10 pt Helvetica, not embedded, 10 pt apart: the box of that font is 13.7 pt high, so the boxes
-  // of neighbouring lines overlap by a third
-  for (const step of [10, 10.5, 12]) {
-    const src = plain(`BT /F2 10 Tf 50 ${700 + step} Td (Client) Tj ET BT /F1 10 Tf 50 700 Td (Ligne a changer) Tj ET BT /F2 10 Tf 50 ${700 - step} Td (Total) Tj ET`);
-    const o = adoptPiece(texts(src).find((p) => p.text === "Ligne a changer"), "x");
-    o.text = "CHANGE";
-    const back = texts(engine.exportPdf(src, [[o]], new Map()).data).map((p) => p.text).sort();
-    assert.deepEqual(back, ["CHANGE", "Client", "Total"], `lines ${step} pt apart`);
+test("lines set tight: changing one keeps the lines above and below, down to 0.85 of the font size", () => {
+  // Standard fonts, not embedded, 10 pt. The box of such a font is about 13.7 pt high, so the boxes
+  // of neighbouring lines overlap; letters with descenders above, capitals below (the worst case).
+  const fonts = { Helvetica: "Helvetica-Bold", "Times-Roman": "Times-Bold", Courier: "Courier-Bold" };
+  for (const [regular, bold] of Object.entries(fonts)) {
+    for (const step of [12, 10, 9.5, 9, 8.5]) {
+      const doc = new mupdf.PDFDocument();
+      const res = { Font: { F1: doc.addSimpleFont(new mupdf.Font(regular), "Latin"), F2: doc.addSimpleFont(new mupdf.Font(bold), "Latin") } };
+      doc.insertPage(-1, doc.addPage([0, 0, 595, 842], 0, res, `BT /F2 10 Tf 50 ${700 + step} Td (Agjpy Client) Tj ET BT /F1 10 Tf 50 700 Td (Ligne a changer gjpqy) Tj ET BT /F2 10 Tf 50 ${700 - step} Td (ATotal AEIOU) Tj ET`));
+      const src = bytesOf(doc);
+      doc.destroy();
+      const o = adoptPiece(texts(src).find((p) => p.text.startsWith("Ligne")), "x");
+      o.text = "CHANGE";
+      const back = texts(engine.exportPdf(src, [[o]], new Map()).data).map((p) => p.text).sort();
+      assert.deepEqual(back, ["ATotal AEIOU", "Agjpy Client", "CHANGE"], `${regular}, lines ${step} pt apart at 10 pt`);
+    }
   }
-  // and each of the three can be changed: the edited one really goes, whatever its place
+  // three lines of one style are one paragraph: edited whole, all three really go
   const src = plain("BT /F1 10 Tf 50 710 Td (Haut) Tj ET BT /F1 10 Tf 50 700 Td (Milieu) Tj ET BT /F1 10 Tf 50 690 Td (Bas) Tj ET");
   const whole = adoptPiece(texts(src)[0], "x");
-  assert.equal(whole.text, "Haut\nMilieu\nBas", "three lines of one style are one paragraph");
+  assert.equal(whole.text, "Haut\nMilieu\nBas");
   whole.text = "Un\nDeux\nTrois";
   assert.deepEqual(texts(engine.exportPdf(src, [[whole]], new Map()).data).map((p) => p.text), ["Un\nDeux\nTrois"]);
 });
 
-test("lines set tight in an embedded font (Lato, line spacing 1.0): the neighbours stay too", () => {
+test("lines set tight in embedded fonts (as the editor and browsers write them): the neighbours stay too", () => {
   const blank = plain("");
-  const lines = ["Premier", "Second", "Dernier"].map((t, i) => T({ id: `l${i}`, text: t, x: 50, y: 100 + i * 12, size: 12, family: "Lato", bold: i !== 1 }));
-  const src = engine.exportPdf(blank, [lines], new Map()).data;
-  const o = adoptPiece(texts(src).find((p) => p.text === "Second"), "x");
-  o.text = "Autre";
-  assert.deepEqual(texts(engine.exportPdf(src, [[o]], new Map()).data).map((p) => p.text).sort(), ["Autre", "Dernier", "Premier"]);
+  for (const family of ["Lato", "Helvetica", "Times", "Courier"]) {
+    for (const spacing of [1.2, 1, 0.9, 0.85]) {
+      const lines = ["Agjpy Premier", "Second gjpqy", "ADernier AEIOU"].map((t, i) => T({ id: `l${i}`, text: t, x: 50, y: 100 + i * 12 * spacing, size: 12, family, bold: i !== 1 }));
+      const src = engine.exportPdf(blank, [lines], new Map()).data;
+      const o = adoptPiece(texts(src).find((p) => p.text.startsWith("Second")), "x");
+      o.text = "Autre";
+      assert.deepEqual(texts(engine.exportPdf(src, [[o]], new Map()).data).map((p) => p.text).sort(), ["ADernier AEIOU", "Agjpy Premier", "Autre"], `${family} at line spacing ${spacing}`);
+    }
+  }
 });
 
 test("words that MuPDF splits on one baseline are one piece; words far apart are two", () => {

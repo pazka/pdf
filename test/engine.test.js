@@ -194,7 +194,12 @@ test("shapes are drawn where and how they were asked", () => {
     // a 100 x 20 bar turned a quarter turn about its centre (350,730): it now stands 20 wide, 100 high
     { id: "t", type: "rect", x: 300, y: 720, w: 100, h: 20, fill: [0, 0, 1], stroke: null, rotation: 90 },
     { id: "s", type: "text", text: "XXXXXXXX", x: 430, y: 700, size: 20, family: "Helvetica", bold: true, italic: false, color: [0, 0.4, 0], strike: true },
+    // a thick arrow: its head is 24 long, large enough to have an inside that its outline does not cover
+    { id: "b", type: "arrow", x1: 100, y1: 800, x2: 200, y2: 800, stroke: [0, 0.5, 0.5], strokeWidth: 6 },
+    { id: "u", type: "text", text: "XXXXXXXX", x: 430, y: 760, size: 20, family: "Helvetica", bold: true, italic: false, color: [0, 0, 0], underline: true, opacity: 0.5 },
   ]);
+  // a half transparent black text: its underline is mid grey on the white page
+  assertPixel(pixelAt(data, 0, 480, 760 + 20 * 0.12 + 0.4), [128, 128, 128], "underline of a text at 50 % opacity", 10);
   assertPixel(pixelAt(data, 0, 206, 690), [0, 0, 0], "dash");
   assertPixel(pixelAt(data, 0, 216, 690), [255, 255, 255], "gap between two dashes");
   assertPixel(pixelAt(data, 0, 350, 690), [0, 0, 255], "top of the turned bar");
@@ -209,9 +214,15 @@ test("shapes are drawn where and how they were asked", () => {
   assertPixel(pixelAt(data, 0, 223, 563), [255, 255, 255], "outside the ellipse, inside its box");
   assertPixel(pixelAt(data, 0, 365, 580), [0, 0, 0], "line");
   assertPixel(pixelAt(data, 0, 365, 588), [255, 255, 255], "beside the line");
+  // widths: the line is 6 wide (3 on each side of y=580), the drawing 5 (2.5 on each side of y=640)
+  assertPixel(pixelAt(data, 0, 365, 582.4), [0, 0, 0], "2.4 from the middle of a line 6 wide");
+  assertPixel(pixelAt(data, 0, 150, 641.9), [255, 128, 0], "1.9 from the middle of a drawing 5 wide");
+  assertPixel(pixelAt(data, 0, 150, 644), [255, 255, 255], "beside the drawing");
   assertPixel(pixelAt(data, 0, 450, 600), [128, 0, 128], "arrow shaft");
   // the head is a triangle 12 long behind the tip (500,600): this point is in it and 3.5 off the shaft
   assertPixel(pixelAt(data, 0, 492, 603.5), [128, 0, 128], "arrow head");
+  // inside the big head: 4.5 off the shaft (3 wide on each side), more than 3 from each edge of the head
+  assertPixel(pixelAt(data, 0, 182, 804.5), [0, 128, 128], "fill of the arrow head, in the arrow's colour");
   assertPixel(pixelAt(data, 0, 480, 603.5), [255, 255, 255], "beside the arrow shaft, behind the head");
   assertPixel(pixelAt(data, 0, 160, 640), [255, 128, 0], "drawing");
   assertPixel(pixelAt(data, 0, 130, 695), [128, 128, 128], "half transparent black on white", 10);
@@ -227,7 +238,9 @@ test("an image keeps its transparency and its place", () => {
     { id: "i", type: "image", imageId: "img1", x: 100, y: 600, w: 100, h: 100, opacity: 1 },
     { id: "j", type: "image", imageId: "jpg", x: 300, y: 600, w: 40, h: 40, opacity: 1 },
     { id: "k", type: "image", imageId: "not-loaded", x: 400, y: 600, w: 40, h: 40, opacity: 1 },
+    { id: "h", type: "image", imageId: "jpg", x: 300, y: 660, w: 40, h: 40, opacity: 0.5 },
   ], 0, images);
+  assertPixel(pixelAt(data, 0, 320, 680), [128, 128, 128], "a black image at 50 % opacity on the white page", 12);
   // the upper half of the picture is red, the lower half green: upside down would swap them
   assertPixel(pixelAt(data, 0, 175, 625), [214, 69, 65], "upper half of the image");
   assertPixel(pixelAt(data, 0, 175, 675), [20, 160, 90], "lower half of the image");
